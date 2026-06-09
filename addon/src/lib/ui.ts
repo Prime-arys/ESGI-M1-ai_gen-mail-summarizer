@@ -13,6 +13,8 @@ const STYLE = `
   }
   .fab:hover { background: #185845; }
   .fab:disabled { opacity: .6; cursor: default; }
+  .fab.cached { background: #2a5a8a; }
+  .fab.cached:hover { background: #214670; }
 
   .panel {
     position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 95vw;
@@ -24,14 +26,20 @@ const STYLE = `
   }
   .panel.open { transform: translateX(0); }
   .panel header {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 4px;
     padding: 14px 18px; border-bottom: 1px solid #e5e3da; background: #fff;
   }
   .panel header h2 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; }
   .panel header button {
     background: transparent; border: 0; cursor: pointer;
-    font-size: 18px; color: #5f5e5a; padding: 4px 8px;
+    font-size: 16px; color: #5f5e5a; padding: 4px 8px; border-radius: 6px;
   }
+  .panel header button:hover { background: #f0eee5; }
+  .panel header button:disabled { opacity: .4; cursor: default; }
+  .panel header button.refresh { font-size: 15px; }
+  .panel header button.refresh.spinning { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   .status { padding: 10px 18px; font-size: 12px; color: #5f5e5a; }
   .list { overflow: auto; padding: 0 16px 16px; }
 
@@ -53,17 +61,28 @@ const STYLE = `
 `;
 
 export interface UiHandlers {
-  onSummarize: () => void | Promise<void>;
+  /** Scrape + envoie au backend + retourne les résumés. Appelé pour générer ET pour rafraîchir. */
+  fetchSummaries: () => Promise<MailSummary[]>;
+  /** Hook appelé après chaque fetch réussi pour permettre au content script de persister. */
+  onSummariesUpdated?: (summaries: MailSummary[]) => Promise<void> | void;
+  /** Résumés déjà en cache si on a déjà généré une fois récemment. */
+  initialCached?: MailSummary[] | null;
 }
 
 class SummarizerUI {
   private root: ShadowRoot;
   private fab!: HTMLButtonElement;
   private panel!: HTMLDivElement;
+  private refreshBtn!: HTMLButtonElement;
   private statusEl!: HTMLDivElement;
   private listEl!: HTMLDivElement;
+  private current: MailSummary[] | null;
+  private handlers: UiHandlers;
 
   constructor(handlers: UiHandlers) {
+    this.handlers = handlers;
+    this.current = handlers.initialCached ?? null;
+
     const host = document.createElement('div');
     host.id = HOST_ID;
     document.documentElement.appendChild(host);
@@ -73,15 +92,15 @@ class SummarizerUI {
     style.textContent = STYLE;
     this.root.appendChild(style);
 
-    this.buildFab(handlers);
+    this.buildFab();
     this.buildPanel();
+    this.applyMode();
   }
 
-  private buildFab(handlers: UiHandlers) {
+  private buildFab() {
     this.fab = document.createElement('button');
     this.fab.className = 'fab';
-    this.fab.textContent = 'Résumer mes mails';
-    this.fab.addEventListener('click', () => handlers.onSummarize());
+    this.fab.addEventListener('click', () => this.onFabClick());
     this.root.appendChild(this.fab);
   }
 
@@ -92,11 +111,19 @@ class SummarizerUI {
     const header = document.createElement('header');
     const h2 = document.createElement('h2');
     h2.textContent = 'Résumés Gemini';
+
+    this.refreshBtn = document.createElement('button');
+    this.refreshBtn.className = 'refresh';
+    this.refreshBtn.textContent = '↻';
+    this.refreshBtn.title = 'Régénérer les résumés';
+    this.refreshBtn.addEventListener('click', () => this.runFetch(true));
+
     const close = document.createElement('button');
     close.textContent = '×';
     close.title = 'Fermer';
     close.addEventListener('click', () => this.panel.classList.remove('open'));
-    header.append(h2, close);
+
+    header.append(h2, this.refreshBtn, close);
 
     this.statusEl = document.createElement('div');
     this.statusEl.className = 'status';
@@ -108,14 +135,56 @@ class SummarizerUI {
     this.root.appendChild(this.panel);
   }
 
-  setBusy(busy: boolean) {
-    this.fab.disabled = busy;
-    this.fab.textContent = busy ? 'Résumé en cours…' : 'Résumer mes mails';
+  /** Met à jour le label du FAB selon qu'on a déjà des résumés ou pas. */
+  private applyMode() {
+    if (this.current && this.current.length > 0) {
+      this.fab.textContent = 'Voir';
+      this.fab.classList.add('cached');
+      this.fab.title = 'Voir les derniers résumés (cliquez sur ↻ pour rafraîchir)';
+    } else {
+      this.fab.textContent = 'Résumer mes mails';
+      this.fab.classList.remove('cached');
+      this.fab.title = '';
+    }
   }
 
-  setStatus(msg: string) {
-    this.statusEl.textContent = msg;
+  private async onFabClick() {
+    if (this.current && this.current.length > 0) {
+      // Cache présent : on affiche sans réappeler le backend.
+      this.statusEl.textContent = `${this.current.length} résumé(s) en cache.`;
+      this.renderList(this.current);
+      this.panel.classList.add('open');
+      return;
+    }
+    await this.runFetch(false);
+  }
+
+  private async runFetch(isRefresh: boolean) {
+    this.setBusy(true);
     this.panel.classList.add('open');
+    this.statusEl.textContent = isRefresh ? 'Rafraîchissement…' : 'Envoi au backend…';
+    if (isRefresh) this.refreshBtn.classList.add('spinning');
+    try {
+      const summaries = await this.handlers.fetchSummaries();
+      this.current = summaries;
+      await this.handlers.onSummariesUpdated?.(summaries);
+      this.renderList(summaries);
+      this.statusEl.textContent = `${summaries.length} résumé(s) — mis à jour à ${new Date().toLocaleTimeString('fr-FR')}.`;
+      this.applyMode();
+    } catch (err) {
+      console.error('[mail-summarizer]', err);
+      this.showError(`Erreur : ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      this.setBusy(false);
+      this.refreshBtn.classList.remove('spinning');
+    }
+  }
+
+  private setBusy(busy: boolean) {
+    this.fab.disabled = busy;
+    this.refreshBtn.disabled = busy;
+    if (busy) this.fab.textContent = 'Chargement…';
+    else this.applyMode();
   }
 
   showError(msg: string) {
@@ -127,8 +196,15 @@ class SummarizerUI {
     this.panel.classList.add('open');
   }
 
-  renderSummaries(summaries: MailSummary[]) {
+  private renderList(summaries: MailSummary[]) {
     this.listEl.innerHTML = '';
+    if (summaries.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'err';
+      empty.textContent = 'Aucun résumé.';
+      this.listEl.appendChild(empty);
+      return;
+    }
     for (const s of summaries) {
       const card = document.createElement('div');
       card.className = 'card';
@@ -158,7 +234,6 @@ class SummarizerUI {
       card.append(h, meta, ul);
       this.listEl.appendChild(card);
     }
-    this.panel.classList.add('open');
   }
 }
 

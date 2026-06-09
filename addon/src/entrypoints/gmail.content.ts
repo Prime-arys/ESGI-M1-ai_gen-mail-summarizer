@@ -1,4 +1,5 @@
 import { defineContentScript } from '#imports';
+import { loadCachedSummaries, saveCachedSummaries } from '@/lib/cache';
 import { CONFIG } from '@/lib/config';
 import { scrapeGmail, isGmailReady } from '@/lib/scrapers/gmail';
 import { summarize } from '@/lib/summarizer';
@@ -7,31 +8,25 @@ import { mountUI } from '@/lib/ui';
 export default defineContentScript({
   matches: ['https://mail.google.com/*'],
   runAt: 'document_idle',
-  main() {
-    waitFor(isGmailReady, 30_000).then((ready) => {
-      if (!ready) {
-        console.warn('[mail-summarizer] Gmail liste non détectée — l\'UI sera quand même montée.');
-      }
-      const ui = mountUI({
-        async onSummarize() {
-          try {
-            ui.setBusy(true);
-            const mails = scrapeGmail(CONFIG.maxMails);
-            if (mails.length === 0) {
-              ui.showError('Aucun mail trouvé dans la liste Gmail visible.');
-              return;
-            }
-            ui.setStatus(`Envoi de ${mails.length} mail(s) au backend…`);
-            const summaries = await summarize(mails);
-            ui.renderSummaries(summaries);
-          } catch (err) {
-            console.error('[mail-summarizer]', err);
-            ui.showError(`Erreur : ${err instanceof Error ? err.message : String(err)}`);
-          } finally {
-            ui.setBusy(false);
-          }
-        },
-      });
+  async main() {
+    const ready = await waitFor(isGmailReady, 30_000);
+    if (!ready) {
+      console.warn("[mail-summarizer] Gmail liste non détectée — l'UI sera quand même montée.");
+    }
+    const initialCached = await loadCachedSummaries('gmail');
+
+    mountUI({
+      initialCached,
+      async fetchSummaries() {
+        const mails = scrapeGmail(CONFIG.maxMails);
+        if (mails.length === 0) {
+          throw new Error('Aucun mail trouvé dans la liste Gmail visible.');
+        }
+        return summarize(mails);
+      },
+      async onSummariesUpdated(summaries) {
+        await saveCachedSummaries('gmail', summaries);
+      },
     });
   },
 });
