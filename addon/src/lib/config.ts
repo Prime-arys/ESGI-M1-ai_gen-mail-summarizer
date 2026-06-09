@@ -7,5 +7,5 @@ export const CONFIG = {
   backendUrl: env.WXT_BACKEND_URL ?? 'http://localhost:8000',
 
   /** Nombre max de mails scrapés et envoyés au backend par clic. */
-  maxMails: 15,
+  maxMails: 5,
 } as const;
