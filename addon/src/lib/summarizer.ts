@@ -1,32 +1,30 @@
 import { CONFIG } from '@/lib/config';
-import type { Newsletter, NewsletterSummary } from '@/lib/types';
+import type { Mail, MailSummary, SummarizeResponse } from '@/lib/types';
 
 /**
- * Envoie les newsletters au backend qui appelle le LLM et renvoie les résumés.
+ * Envoie les mails au backend qui appelle Gemini et renvoie les résumés.
  *
- * Contrat attendu :
  *   POST {backendUrl}/summarize
- *   body : { newsletters: [{ id, subject, from, date, text }] }
- *   200  : { summaries: [{ id, subject, source, bullets: string[], url? }] }
+ *   body : { mails: [{ id, subject, from, date, text }] }
+ *   200  : { summaries: [{ id, subject, source, date, bullets: string[], category }] }
  */
-export async function summarize(newsletters: Newsletter[]): Promise<NewsletterSummary[]> {
+export async function summarize(mails: Mail[]): Promise<MailSummary[]> {
   const res = await fetch(`${CONFIG.backendUrl}/summarize`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(CONFIG.backendToken ? { Authorization: `Bearer ${CONFIG.backendToken}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      newsletters: newsletters.map((n) => ({
-        id: n.id,
-        subject: n.subject,
-        from: n.from,
-        date: n.date,
-        text: n.text.slice(0, 8000), // borne le contexte envoyé au LLM
+      mails: mails.map((m) => ({
+        id: m.id,
+        subject: m.subject,
+        from: m.from,
+        date: m.date,
+        text: m.text.slice(0, 8000),
       })),
     }),
   });
-  if (!res.ok) throw new Error(`Backend /summarize : ${res.status}`);
-  const data = await res.json();
-  return data.summaries as NewsletterSummary[];
+  if (!res.ok) {
+    throw new Error(`Backend /summarize : ${res.status} ${await res.text().catch(() => '')}`);
+  }
+  const data = (await res.json()) as SummarizeResponse;
+  return data.summaries;
 }

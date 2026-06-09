@@ -1,5 +1,5 @@
 {
-  "name": "newsletter-digest",
+  "name": "mail-summarizer",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
-    "jspdf": "^4.2.1"
+    "@webext-core/messaging": "^3.0.2"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

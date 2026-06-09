@@ -1,26 +1,24 @@
 export type ProviderId = 'gmail' | 'outlook';
 
-/** Un email identifié comme newsletter, nettoyé en texte brut. */
-export interface Newsletter {
+/** Un mail brut récupéré depuis le DOM de l'UI Gmail / Outlook. */
+export interface Mail {
   id: string;
   subject: string;
   from: string;
-  date: string; // ISO 8601
-  text: string; // contenu en texte brut (HTML déjà nettoyé)
-  listUnsubscribe?: string;
+  date: string;
+  text: string;
 }
 
-/** Résumé renvoyé par le backend pour une newsletter. */
-export interface NewsletterSummary {
+/** Résumé renvoyé par le backend pour un mail. */
+export interface MailSummary {
   id: string;
   subject: string;
   source: string;
+  date: string;
   bullets: string[];
-  url?: string;
+  category: string;
 }
 
-export interface OAuthTokens {
-  accessToken: string;
-  expiresAt: number; // timestamp ms
-  refreshToken?: string;
+export interface SummarizeResponse {
+  summaries: MailSummary[];
 }

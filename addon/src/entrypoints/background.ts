@@ -1,9 +1,13 @@
 import { defineBackground, browser } from '#imports';
 
 export default defineBackground(() => {
-  // Pas de popup : un clic sur l'icône ouvre la page du digest (onglet à part).
-  // Un onglet plein évite que le flux OAuth ne ferme une popup au moment où elle perd le focus.
-  browser.action.onClicked.addListener(() => {
-    browser.tabs.create({ url: browser.runtime.getURL('/digest.html') });
+  // Clic sur l'icône → ouvre Gmail si l'onglet courant n'est pas déjà
+  // sur un webmail supporté. Le content script fait le reste.
+  browser.action.onClicked.addListener(async (tab) => {
+    const url = tab.url ?? '';
+    const supported = /^https:\/\/(mail\.google\.com|outlook\.(live|office|office365)\.com)\//.test(url);
+    if (!supported) {
+      await browser.tabs.create({ url: 'https://mail.google.com/' });
+    }
   });
 });
