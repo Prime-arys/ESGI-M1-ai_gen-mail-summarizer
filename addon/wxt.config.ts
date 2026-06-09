@@ -3,6 +3,7 @@ import { defineConfig } from 'wxt';
 // https://wxt.dev/api/config.html
 export default defineConfig({
   // Pages en vanilla TS ici. Pour React : décommente la ligne ci-dessous + pnpm add @wxt-dev/module-react
+  srcDir: "src",
   // modules: ['@wxt-dev/module-react'],
   manifest: {
     name: 'Newsletter Digest',

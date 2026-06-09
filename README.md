@@ -8,29 +8,6 @@ Extension Chrome/Firefox qui :
 
 Le backend ne détient que la clé du LLM. Les tokens mail restent côté extension.
 
-## Arborescence
-
-```
-.
-├─ wxt.config.ts
-├─ package.json
-├─ .env.example
-├─ lib/
-│  ├─ types.ts        # types partagés
-│  ├─ config.ts       # IDs OAuth, URL backend, fenêtre
-│  ├─ auth.ts         # flux OAuth + PKCE (le cœur)
-│  ├─ providers.ts    # interface IMailProvider + Gmail + Outlook
-│  ├─ summarizer.ts   # client du backend de résumé
-│  └─ pdf.ts          # génération du PDF (jsPDF)
-├─ entrypoints/
-│  ├─ background.ts   # clic sur l'icône → ouvre la page digest
-│  └─ digest/
-│     ├─ index.html
-│     └─ main.ts      # orchestration: fetch → résumé → PDF
-└─ backend/
-   └─ main.py         # exemple FastAPI + Ollama (optionnel)
-```
-
 ## Installation
 
 ```bash
