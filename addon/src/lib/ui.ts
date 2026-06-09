@@ -72,6 +72,7 @@ export interface UiHandlers {
 
 class SummarizerUI {
   private root: ShadowRoot;
+  private host!: HTMLDivElement;
   private fab!: HTMLButtonElement;
   private panel!: HTMLDivElement;
   private refreshBtn!: HTMLButtonElement;
@@ -86,13 +87,13 @@ class SummarizerUI {
 
     // Host fixé + isolation totale : robuste face aux transforms / filtres
     // qu'Outlook applique à <body> et qui cassaient le position:fixed.
-    const host = document.createElement('div');
-    host.id = HOST_ID;
-    host.style.cssText =
+    this.host = document.createElement('div');
+    this.host.id = HOST_ID;
+    this.host.style.cssText =
       'all: initial; position: fixed; top: 0; left: 0; width: 0; height: 0; ' +
       'z-index: 2147483647; pointer-events: none;';
-    document.documentElement.appendChild(host);
-    this.root = host.attachShadow({ mode: 'open' });
+    document.documentElement.appendChild(this.host);
+    this.root = this.host.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
     style.textContent = STYLE;
@@ -101,6 +102,20 @@ class SummarizerUI {
     this.buildFab();
     this.buildPanel();
     this.applyMode();
+    this.keepAlive();
+  }
+
+  /**
+   * Outlook re-render parfois <html>/<body> et arrache notre host.
+   * On surveille : s'il disparaît, on le ré-insère.
+   */
+  private keepAlive() {
+    const obs = new MutationObserver(() => {
+      if (!this.host.isConnected) {
+        document.documentElement.appendChild(this.host);
+      }
+    });
+    obs.observe(document.documentElement, { childList: true });
   }
 
   private buildFab() {
