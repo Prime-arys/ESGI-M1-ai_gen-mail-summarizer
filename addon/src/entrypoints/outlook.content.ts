@@ -13,6 +13,7 @@ export default defineContentScript({
   ],
   runAt: 'document_idle',
   async main() {
+    console.info('[mail-summarizer] Outlook content script chargé sur', location.href);
     const ready = await waitFor(isOutlookReady, 30_000);
     if (!ready) {
       console.warn("[mail-summarizer] Outlook liste non détectée — l'UI sera quand même montée.");

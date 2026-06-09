@@ -6,10 +6,11 @@ const STYLE = `
   :host { all: initial; }
   * { box-sizing: border-box; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   .fab {
-    position: fixed; right: 20px; bottom: 20px; z-index: 2147483646;
+    position: fixed; right: 20px; bottom: 20px;
     padding: 12px 18px; border-radius: 999px;
     background: #1f6e56; color: #fff; font-weight: 600; font-size: 14px;
     border: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    pointer-events: auto;
   }
   .fab:hover { background: #185845; }
   .fab:disabled { opacity: .6; cursor: default; }
@@ -20,9 +21,9 @@ const STYLE = `
     position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 95vw;
     background: #faf9f5; color: #1a1a18;
     box-shadow: -8px 0 24px rgba(0,0,0,.12);
-    z-index: 2147483647;
     display: flex; flex-direction: column;
     transform: translateX(100%); transition: transform .25s ease;
+    pointer-events: auto;
   }
   .panel.open { transform: translateX(0); }
   .panel header {
@@ -83,8 +84,13 @@ class SummarizerUI {
     this.handlers = handlers;
     this.current = handlers.initialCached ?? null;
 
+    // Host fixé + isolation totale : robuste face aux transforms / filtres
+    // qu'Outlook applique à <body> et qui cassaient le position:fixed.
     const host = document.createElement('div');
     host.id = HOST_ID;
+    host.style.cssText =
+      'all: initial; position: fixed; top: 0; left: 0; width: 0; height: 0; ' +
+      'z-index: 2147483647; pointer-events: none;';
     document.documentElement.appendChild(host);
     this.root = host.attachShadow({ mode: 'open' });
 

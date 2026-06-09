@@ -2,9 +2,9 @@ import type { Mail } from '@/lib/types';
 
 /**
  * Scraping DOM de la liste des mails Outlook (web).
- * Outlook expose chaque message en `[role="option"]` avec un `aria-label`
- * descriptif que l'on parse. On complète avec les sous-éléments quand on les
- * reconnaît (les autoid bougent mais l'ordre des lignes est stable).
+ * Outlook web utilise des id préfixés stables (`subject-`, `from-`, `received-`,
+ * `previewText-`). On les cible en priorité ; fallback sur aria-label parsing
+ * si la structure change.
  */
 export function scrapeOutlook(max: number): Mail[] {
   const rows = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
@@ -12,9 +12,7 @@ export function scrapeOutlook(max: number): Mail[] {
 
   for (const row of rows) {
     if (mails.length >= max) break;
-
-    const aria = row.getAttribute('aria-label') || '';
-    if (!aria || !looksLikeMessageRow(aria, row)) continue;
+    if (!looksLikeMessageRow(row)) continue;
 
     const id =
       row.getAttribute('data-convid') ||
@@ -22,27 +20,55 @@ export function scrapeOutlook(max: number): Mail[] {
       row.id ||
       `outlook-${mails.length}`;
 
-    const parsed = parseAriaLabel(aria);
+    // 1. Sélecteurs Outlook stables (id préfixés).
+    const subjectEl = row.querySelector<HTMLElement>('[id^="subject-"], [id*="subject"]');
+    const fromEl = row.querySelector<HTMLElement>('[id^="from-"], [id*="sender"], [id*="from"]');
+    const dateEl = row.querySelector<HTMLElement>('[id^="received-"], [id*="received"], time');
+    const previewEl = row.querySelector<HTMLElement>('[id^="previewText-"], [id*="preview"]');
 
-    const subject = parsed.subject || textOfFirstMatching(row, ['[id*="subject"]', 'span[title]']) || '(sans objet)';
-    const from = parsed.from || textOfFirstMatching(row, ['[id*="from"]', '[id*="sender"]']) || '';
-    const date = parsed.date || textOfFirstMatching(row, ['[id*="received"]', 'time']) || '';
-    const snippet = parsed.snippet || '';
+    let subject = textOf(subjectEl);
+    let from = textOf(fromEl);
+    let date = textOf(dateEl);
+    let snippet = textOf(previewEl);
 
-    mails.push({ id, subject, from, date, text: snippet || aria });
+    // 2. Fallback : on parse l'aria-label si certains champs sont vides.
+    if (!subject || !from || !snippet) {
+      const aria = row.getAttribute('aria-label') || '';
+      const parsed = parseAriaLabel(aria);
+      subject = subject || parsed.subject;
+      from = from || parsed.from;
+      date = date || parsed.date;
+      snippet = snippet || parsed.snippet || aria;
+    }
+
+    if (!subject && !snippet) continue;
+
+    mails.push({
+      id,
+      subject: subject || '(sans objet)',
+      from,
+      date,
+      text: snippet,
+    });
   }
 
   return mails;
 }
 
 export function isOutlookReady(): boolean {
-  return document.querySelectorAll('[role="option"]').length > 0;
+  // On ne se base plus sur role=option (présent pour folder tree aussi).
+  return document.querySelectorAll('[role="option"] [id^="subject-"], [role="option"] [id*="subject"]').length > 0;
 }
 
-function looksLikeMessageRow(aria: string, row: HTMLElement): boolean {
-  // L'arborescence des dossiers utilise aussi role=option : on filtre par taille
-  // raisonnable d'aria-label + présence de plusieurs sous-divs.
-  return aria.length > 20 && row.querySelectorAll('div, span').length > 3;
+function looksLikeMessageRow(row: HTMLElement): boolean {
+  // Un vrai row de message a au moins un sub-element subject ou un aria-label long.
+  if (row.querySelector('[id^="subject-"], [id*="subject"]')) return true;
+  const aria = row.getAttribute('aria-label') || '';
+  return aria.length > 30 && row.querySelectorAll('div, span').length > 4;
+}
+
+function textOf(el: HTMLElement | null): string {
+  return el?.textContent?.trim() || '';
 }
 
 interface ParsedAria {
@@ -53,33 +79,17 @@ interface ParsedAria {
 }
 
 function parseAriaLabel(aria: string): ParsedAria {
-  // Format courant (FR) : "De X. Sujet : Y. Reçu le Z. ..."
-  // Format EN : "From X, Subject Y, Received Z, ..."
-  // On tente quelques patterns simples ; sinon on laisse le snippet brut.
-  const out: ParsedAria = { from: '', subject: '', date: '', snippet: '' };
-
+  const out: ParsedAria = { from: '', subject: '', date: '', snippet: aria };
   const segments = aria.split(/[.,;]\s+/);
   for (const seg of segments) {
     const lower = seg.toLowerCase();
-    if (!out.from && (lower.startsWith('from ') || lower.startsWith('de '))) {
-      out.from = seg.replace(/^(from |de )/i, '').trim();
-    } else if (!out.subject && (lower.startsWith('subject ') || lower.startsWith('sujet '))) {
+    if (!out.from && /^(from |de |expéditeur )/i.test(seg)) {
+      out.from = seg.replace(/^(from |de |expéditeur )/i, '').trim();
+    } else if (!out.subject && /^(subject |sujet )/i.test(seg)) {
       out.subject = seg.replace(/^(subject |sujet :?\s*)/i, '').trim();
-    } else if (!out.date && (lower.startsWith('received ') || lower.startsWith('reçu '))) {
+    } else if (!out.date && /^(received |reçu )/i.test(seg)) {
       out.date = seg.replace(/^(received |reçu (le )?)/i, '').trim();
     }
   }
-
-  // Tout ce qui reste après les champs reconnus sert de snippet.
-  out.snippet = aria;
   return out;
-}
-
-function textOfFirstMatching(root: HTMLElement, selectors: string[]): string {
-  for (const sel of selectors) {
-    const el = root.querySelector<HTMLElement>(sel);
-    const t = el?.textContent?.trim();
-    if (t) return t;
-  }
-  return '';
 }

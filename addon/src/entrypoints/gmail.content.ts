@@ -9,6 +9,7 @@ export default defineContentScript({
   matches: ['https://mail.google.com/*'],
   runAt: 'document_idle',
   async main() {
+    console.info('[mail-summarizer] Gmail content script chargé sur', location.href);
     const ready = await waitFor(isGmailReady, 30_000);
     if (!ready) {
       console.warn("[mail-summarizer] Gmail liste non détectée — l'UI sera quand même montée.");
