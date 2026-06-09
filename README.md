@@ -63,7 +63,9 @@ WXT_BACKEND_URL=http://localhost:8000
 - Le scraping ne lit que ce qui est **visible dans la liste** : sujet, expéditeur, snippet (≈ 100 caractères). Le résumé Gemini reste pertinent mais bref.
 - En local seulement : pas d'authentification sur le backend, CORS ouvert. Ne pas exposer tel quel.
 
+## Déroulé
 
+```mermaid
 sequenceDiagram
     actor U as Utilisateur
     participant CS as Content Script<br/>(Gmail / Outlook)
@@ -95,3 +97,4 @@ sequenceDiagram
     end
 
     Note over U,LS: Clic ↻ dans le header du panneau<br/>relance le cycle "Résumer" et écrase le cache.
+```
