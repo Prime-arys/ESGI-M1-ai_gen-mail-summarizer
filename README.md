@@ -62,3 +62,36 @@ WXT_BACKEND_URL=http://localhost:8000
 - Les classes CSS de Gmail / Outlook changent : si rien n'est scrapé, ajuste les sélecteurs dans `addon/src/lib/scrapers/`.
 - Le scraping ne lit que ce qui est **visible dans la liste** : sujet, expéditeur, snippet (≈ 100 caractères). Le résumé Gemini reste pertinent mais bref.
 - En local seulement : pas d'authentification sur le backend, CORS ouvert. Ne pas exposer tel quel.
+
+
+sequenceDiagram
+    actor U as Utilisateur
+    participant CS as Content Script<br/>(Gmail / Outlook)
+    participant LS as Local Storage<br/>(storage.local)
+    participant BE as Backend FastAPI<br/>(localhost:8000)
+    participant G as Gemini API
+
+    Note over CS: Page Gmail / Outlook chargée
+    CS->>LS: lecture cache (TTL 30 min)
+    LS-->>CS: résumés ou rien
+    CS->>U: Affiche FAB ("Voir" si cache, sinon "Résumer mes mails")
+
+    U->>CS: Clic FAB
+
+    alt Cache présent → mode "Voir"
+        CS-->>U: Affiche le panneau directement<br/>(aucun appel backend)
+    else Pas de cache → mode "Résumer"
+        CS->>CS: Scrape DOM des 5 derniers mails<br/>(sujet, expéditeur, snippet, date)
+        CS->>BE: POST /summarize { mails }
+
+        loop pour chaque mail (concurrence 2)
+            BE->>G: generate_content(prompt + mail)
+            G-->>BE: JSON { bullets, category }
+        end
+
+        BE-->>CS: { summaries }
+        CS->>LS: sauvegarde résumés + timestamp
+        CS-->>U: Affiche le panneau
+    end
+
+    Note over U,LS: Clic ↻ dans le header du panneau<br/>relance le cycle "Résumer" et écrase le cache.
